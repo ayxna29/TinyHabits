@@ -738,11 +738,11 @@ function renderJournal(main) {
   main.innerHTML =
     '<h1 class="page-title" style="font-size:clamp(2rem,5vw,3rem)">Journal</h1>' +
     '<p class="sub">The mindset side of the practice — how the habits are actually landing, in your own words.</p>' +
-    '<section class="card-paper journal-composer" style="margin-top:1.75rem;">' +
+    '<section class="card-paper journal-composer" style="margin-top:2rem;">' +
       '<textarea class="input-line journal-textarea" id="journalText" placeholder="What\'s on your mind? How did today feel?"></textarea>' +
-      '<p class="field-label" style="margin-top:1rem;">Tag a related habit</p>' +
+      '<p class="field-label" style="margin-top:1.25rem;">Tag a related habit</p>' +
       '<div class="chip-row" id="journalTagChips" style="max-height:none;overflow:visible;"></div>' +
-      '<button class="btn btn-primary" id="journalSave" style="margin-top:1.25rem;" disabled>Save entry</button>' +
+      '<button class="btn btn-primary" id="journalSave" style="margin-top:1.5rem;" disabled>Save entry</button>' +
     '</section>' +
     (journal.length ? '<div id="journalList" class="block"></div>' : '<p class="card-paper empty-note">No entries yet. A line or two after logging a habit is plenty.</p>');
 
