@@ -290,12 +290,6 @@ async function signIn(email, password) {
   authBusy = false;
   if (error) { authMessage = error.message; authMessageKind = "error"; render(); }
 }
-async function signInWithGoogle() {
-  authMessage = ""; render();
-  var { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
-  if (error) { authMessage = error.message; authMessageKind = "error"; render(); }
-  // on success the browser navigates away to Google, then back — onAuthStateChange takes it from there
-}
 async function signUp(email, password) {
   authBusy = true; authMessage = ""; render();
   var { data, error } = await supabase.auth.signUp({ email: email, password: password });
@@ -444,8 +438,6 @@ function renderLanding(main) {
         '<button class="auth-tab' + (authMode === "signin" ? " active" : "") + '" data-mode="signin" type="button">Sign in</button>' +
         '<button class="auth-tab' + (authMode === "signup" ? " active" : "") + '" data-mode="signup" type="button">Create account</button>' +
       '</div>' +
-      '<button type="button" class="btn btn-outline btn-block" id="googleSignIn">Continue with Google</button>' +
-      '<div class="auth-divider"><span>or</span></div>' +
       '<form id="authForm" class="auth-form">' +
         '<div class="edit-field"><label class="field-label">Email</label><input type="email" class="input-line" id="authEmail" required autocomplete="email"></div>' +
         '<div class="edit-field"><label class="field-label">Password</label><input type="password" class="input-line" id="authPassword" required minlength="6" autocomplete="' + (authMode === "signup" ? "new-password" : "current-password") + '"></div>' +
@@ -455,7 +447,6 @@ function renderLanding(main) {
     '</section>' +
     '<footer class="page-footer">Anchor and behavior wording from the official Tiny Habits® Recipe Maker. Tiny Habits® is a trademark of BJ Fogg. A personal practice tool, not affiliated with Tiny Habits.</footer>';
 
-  document.getElementById("googleSignIn").addEventListener("click", signInWithGoogle);
   document.querySelectorAll(".auth-tab").forEach(function (btn) {
     btn.addEventListener("click", function () { authMode = btn.dataset.mode; authMessage = ""; render(); });
   });
