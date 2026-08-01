@@ -156,6 +156,7 @@ var sessionChecked = false;
 var recipes = [];
 var goals = [];
 var journal = [];
+var userSettings = null;
 var recipesLoading = false;
 
 var authMode = "signin"; // or "signup"
@@ -175,12 +176,25 @@ async function loadJournalRaw() {
   var { data, error } = await supabase.from("journal_entries").select("*").order("created_at", { ascending: false });
   if (error) console.error(error); else journal = data || [];
 }
+async function loadUserSettingsRaw() {
+  var { data, error } = await supabase.from("user_settings").select("*").eq("user_id", session.user.id).maybeSingle();
+  if (error) { console.error(error); return; }
+  userSettings = data || { user_id: session.user.id, daily_reminder_enabled: false, daily_reminder_time: null };
+}
+async function saveUserSettings(patch) {
+  var next = Object.assign({}, userSettings, patch, { user_id: session.user.id });
+  var { data, error } = await supabase.from("user_settings").upsert(next).select().single();
+  if (error) { console.error(error); return error; }
+  userSettings = data;
+  return null;
+}
 async function loadAll() {
-  if (!session) { recipes = []; goals = []; journal = []; return; }
+  if (!session) { recipes = []; goals = []; journal = []; userSettings = null; return; }
   recipesLoading = true;
   render();
-  await Promise.all([loadRecipesRaw(), loadGoalsRaw(), loadJournalRaw()]);
+  await Promise.all([loadRecipesRaw(), loadGoalsRaw(), loadJournalRaw(), loadUserSettingsRaw()]);
   recipesLoading = false;
+  pollDailyReminder();
   render();
 }
 
@@ -310,6 +324,46 @@ supabase.auth.getSession().then(function (res) {
   else render();
 });
 
+/* ---------------- general daily reminder (client-side, while a tab is open) ---------------- */
+var DAILY_FIRED_KEY = "tiny-habits:daily-fired:v1";
+var notifPermission = ("Notification" in window) ? Notification.permission : "unsupported";
+
+function requestNotifPermission() {
+  if (!("Notification" in window)) return;
+  Notification.requestPermission().then(function (p) { notifPermission = p; render(); });
+}
+function minutesNow(d) { d = d || new Date(); return d.getHours() * 60 + d.getMinutes(); }
+function minutesOf(t) { var p = t.split(":"); return Number(p[0]) * 60 + Number(p[1]); }
+
+function pollDailyReminder() {
+  if (!session || !userSettings || !userSettings.daily_reminder_enabled || !userSettings.daily_reminder_time) return;
+  if (minutesNow() < minutesOf(userSettings.daily_reminder_time)) return;
+  var today = todayStr();
+  if (localStorage.getItem(DAILY_FIRED_KEY) === today) return;
+  localStorage.setItem(DAILY_FIRED_KEY, today);
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification("Tiny Habits", { body: "A minute for one small thing?", tag: "daily-reminder" }); } catch (e) {}
+  }
+}
+setInterval(function () { pollDailyReminder(); }, 60000);
+
+/* ---------------- display / accessibility preferences (local to this device) ---------------- */
+var DISPLAY_PREFS_KEY = "tiny-habits:display-prefs:v1";
+var DEFAULT_DISPLAY_PREFS = { calmMode: false, largerText: false, highContrast: false, hideNumbers: false };
+function loadDisplayPrefs() {
+  try { return Object.assign({}, DEFAULT_DISPLAY_PREFS, JSON.parse(localStorage.getItem(DISPLAY_PREFS_KEY) || "{}")); }
+  catch (e) { return Object.assign({}, DEFAULT_DISPLAY_PREFS); }
+}
+var displayPrefs = loadDisplayPrefs();
+function saveDisplayPrefs() { try { localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify(displayPrefs)); } catch (e) {} }
+function applyDisplayPrefs() {
+  var root = document.documentElement;
+  root.classList.toggle("calm-mode", displayPrefs.calmMode);
+  root.classList.toggle("larger-text", displayPrefs.largerText);
+  root.classList.toggle("high-contrast", displayPrefs.highContrast);
+}
+applyDisplayPrefs();
+
 /* ---------------- ephemeral UI state ---------------- */
 var builderOpen = false;
 var builderBusy = false;
@@ -332,6 +386,10 @@ document.getElementById("navLinks").addEventListener("click", function (e) {
   if (btn) goTo(btn.dataset.route);
 });
 window.addEventListener("hashchange", render);
+document.querySelector(".skip-link").addEventListener("click", function (e) {
+  e.preventDefault();
+  document.getElementById("main").focus();
+});
 
 /* ---------------- render dispatch ---------------- */
 function render() {
@@ -364,6 +422,7 @@ function render() {
   else if (route === "/method") renderMethod(main);
   else if (route === "/goals") renderGoals(main);
   else if (route === "/journal") renderJournal(main);
+  else if (route === "/settings") renderSettings(main);
   else renderToday(main);
 }
 
@@ -407,7 +466,7 @@ function renderLanding(main) {
     if (authMode === "signin") signIn(email, password); else signUp(email, password);
   });
 
-  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || displayPrefs.calmMode;
   clearInterval(landingTimer);
   if (!reduceMotion) {
     var idx = 0;
@@ -565,11 +624,11 @@ function renderRecipeCard(r) {
     '<p class="recipe-meta-line">Celebrate: ' + escapeHtml(r.celebration) + '</p>' +
     '<div class="day-grid" id="dayGrid-' + r.id + '"></div>' +
     '<div class="stat-and-log">' +
-      '<p class="stat-line">' + (streak > 0 ? streak + " day" + (streak === 1 ? "" : "s") + " in a row" : "Start today") + ' · best ' + best + ' · ' + rate + '% of the last 14</p>' +
+      '<p class="stat-line">' + (displayPrefs.hideNumbers ? (streak > 0 ? "On track" : "Start today") : ((streak > 0 ? streak + " day" + (streak === 1 ? "" : "s") + " in a row" : "Start today") + ' · best ' + best + ' · ' + rate + '% of the last 14')) + '</p>' +
       '<button class="btn btn-pill" data-act="log" style="' + (doneToday ? "background:var(--secondary);color:var(--secondary-foreground)" : "background:var(--primary);color:var(--primary-foreground)") + '">' + (doneToday ? "Done today ✓" : "I did it") + '</button>' +
     '</div>' +
     (sug ? '<button type="button" class="suggestion-badge ' + sug.type + '" data-act="suggestion">' + escapeHtml(sug.label) + '</button>' : '') +
-    (shineVisible[r.id] ? '<div class="shine-banner">' + escapeHtml(r.celebration) + '</div>' : '') +
+    (shineVisible[r.id] ? '<div class="shine-banner' + (displayPrefs.calmMode ? " no-animate" : "") + '">' + escapeHtml(r.celebration) + '</div>' : '') +
     (editing ? renderEditPanelHtml(r) : '');
 
   var dayGrid = card.querySelector("#dayGrid-" + r.id);
@@ -794,6 +853,64 @@ function renderJournalEntry(entry) {
   return card;
 }
 
+/* ---------------- Settings ---------------- */
+function renderSettings(main) {
+  if (recipesLoading || !userSettings) { main.innerHTML = '<p class="sub" style="margin-top:3rem;">Loading your settings…</p>'; return; }
+
+  main.innerHTML =
+    '<h1 class="page-title" style="font-size:clamp(2rem,5vw,3rem)">Settings</h1>' +
+    '<p class="sub">Notifications, and how the app looks and sounds for you.</p>' +
+
+    '<section class="card-paper settings-card">' +
+      '<h2 class="h2">Notifications</h2>' +
+      '<p class="stat-line" style="margin-top:.5rem;">A single daily nudge — not tied to any one habit, just a reminder to show up.</p>' +
+      '<label class="settings-row"><input type="checkbox" id="setReminderEnabled" ' + (userSettings.daily_reminder_enabled ? "checked" : "") + '><span><b>Remind me once a day</b><br><span class="stat-line">Fires while a tab is open — this can\'t reach you if the browser is fully closed.</span></span></label>' +
+      '<div class="edit-field" style="margin-top:1rem;max-width:12rem;' + (userSettings.daily_reminder_enabled ? "" : "display:none;") + '" id="reminderTimeField"><label class="field-label">Time</label><input type="time" class="input-line" id="setReminderTime" value="' + escapeHtml(userSettings.daily_reminder_time || "09:00") + '"></div>' +
+      (notifPermission === "default" ? '<button class="btn btn-outline btn-sm" id="btnRequestNotif" style="margin-top:1rem;" type="button">Allow browser notifications</button>' : "") +
+      (notifPermission === "denied" ? '<p class="stat-line" style="margin-top:1rem;color:var(--destructive);">Notifications are blocked for this site in your browser — the reminder will be silent until you allow them.</p>' : "") +
+      '<button class="btn btn-primary btn-sm" id="btnSaveReminder" style="margin-top:1.25rem;">Save</button>' +
+      '<p class="settings-saved" id="reminderSaved" aria-live="polite" hidden>Saved.</p>' +
+    '</section>' +
+
+    '<section class="card-paper settings-card">' +
+      '<h2 class="h2">Display &amp; accessibility</h2>' +
+      '<label class="settings-row"><input type="checkbox" id="prefCalm" ' + (displayPrefs.calmMode ? "checked" : "") + '><span><b>Calm mode</b><br><span class="stat-line">Turns off motion and animated celebrations — confirmations become plain and still.</span></span></label>' +
+      '<label class="settings-row"><input type="checkbox" id="prefLargeText" ' + (displayPrefs.largerText ? "checked" : "") + '><span><b>Larger text</b><br><span class="stat-line">Scales up all text on this device.</span></span></label>' +
+      '<label class="settings-row"><input type="checkbox" id="prefContrast" ' + (displayPrefs.highContrast ? "checked" : "") + '><span><b>High contrast</b><br><span class="stat-line">Stronger borders and darker text throughout.</span></span></label>' +
+      '<label class="settings-row"><input type="checkbox" id="prefHideNumbers" ' + (displayPrefs.hideNumbers ? "checked" : "") + '><span><b>Hide streak numbers</b><br><span class="stat-line">Shows "on track" instead of day counts and percentages, if numbers add pressure rather than help.</span></span></label>' +
+    '</section>' +
+
+    '<section class="card-paper settings-card">' +
+      '<h2 class="h2">Account</h2>' +
+      '<p class="stat-line" style="margin-top:.5rem;">Signed in as ' + escapeHtml(session.user.email) + '</p>' +
+      '<button class="btn btn-outline btn-sm" id="btnSettingsSignOut" style="margin-top:1rem;">Sign out</button>' +
+    '</section>';
+
+  var enabledBox = document.getElementById("setReminderEnabled");
+  enabledBox.addEventListener("change", function () {
+    document.getElementById("reminderTimeField").style.display = enabledBox.checked ? "" : "none";
+  });
+  var notifBtn = document.getElementById("btnRequestNotif");
+  if (notifBtn) notifBtn.addEventListener("click", requestNotifPermission);
+  document.getElementById("btnSaveReminder").addEventListener("click", async function () {
+    var error = await saveUserSettings({
+      daily_reminder_enabled: enabledBox.checked,
+      daily_reminder_time: document.getElementById("setReminderTime").value || "09:00"
+    });
+    if (error) return;
+    var saved = document.getElementById("reminderSaved");
+    saved.hidden = false;
+    setTimeout(function () { saved.hidden = true; }, 2000);
+  });
+
+  document.getElementById("prefCalm").addEventListener("change", function (e) { displayPrefs.calmMode = e.target.checked; saveDisplayPrefs(); applyDisplayPrefs(); });
+  document.getElementById("prefLargeText").addEventListener("change", function (e) { displayPrefs.largerText = e.target.checked; saveDisplayPrefs(); applyDisplayPrefs(); });
+  document.getElementById("prefContrast").addEventListener("change", function (e) { displayPrefs.highContrast = e.target.checked; saveDisplayPrefs(); applyDisplayPrefs(); });
+  document.getElementById("prefHideNumbers").addEventListener("change", function (e) { displayPrefs.hideNumbers = e.target.checked; saveDisplayPrefs(); render(); });
+
+  document.getElementById("btnSettingsSignOut").addEventListener("click", signOut);
+}
+
 /* ---------------- Review ---------------- */
 function renderReview(main) {
   if (recipesLoading) { main.innerHTML = '<p class="sub" style="margin-top:3rem;">Loading your recipes…</p>'; return; }
@@ -854,7 +971,7 @@ function renderReviewCard(r) {
 
   card.innerHTML =
     '<p class="recipe-sentence">After I <span class="anchor-part">' + escapeHtml(r.anchor) + '</span>, I will ' + escapeHtml(r.behavior) + '.</p>' +
-    '<p class="recipe-meta-line">' + currentStreak(r.log) + ' in a row · ' + rate4wk + '% over 4 weeks · ' + r.log.length + ' total</p>' +
+    '<p class="recipe-meta-line">' + (displayPrefs.hideNumbers ? (currentStreak(r.log) > 0 ? "On track" : "Just getting started") : (currentStreak(r.log) + ' in a row · ' + rate4wk + '% over 4 weeks · ' + r.log.length + ' total')) + '</p>' +
     '<div class="heatmap">' + cols.map(function (col) {
       return '<div class="heatmap-col">' + col.map(function (d) {
         return '<span class="heatmap-cell' + (r.log.includes(d) ? " filled" : "") + '" title="' + d + '"></span>';
