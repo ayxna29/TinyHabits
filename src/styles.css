@@ -45,17 +45,22 @@
     position: sticky; top: 0; z-index: 10;
   }
   .nav {
-    max-width: 48rem; margin: 0 auto;
+    max-width: 72rem; margin: 0 auto;
     display: flex; align-items: center; justify-content: space-between;
-    gap: 2rem; padding: 1.1rem 1.5rem;
+    gap: 2rem; padding: 1.1rem 2rem;
   }
   .nav-brand {
     font-family: var(--font-display); font-size: .9rem; letter-spacing: -0.01em;
     text-decoration: none; color: var(--foreground); cursor: pointer; background: none; border: none; padding: 0;
+    flex-shrink: 0;
   }
-  .nav-links { display: flex; gap: .5rem; font-size: .875rem; }
+  .nav-links {
+    display: flex; align-items: center; gap: 1.1rem; font-size: .875rem;
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
   .nav-link {
-    border-radius: 999px; padding: .5rem 1.05rem; text-decoration: none;
+    border-radius: 999px; padding: .5rem 1.05rem; text-decoration: none; white-space: nowrap;
     color: var(--muted-foreground); cursor: pointer; background: none; border: none; font-family: var(--font-sans); font-size: .875rem;
   }
   .nav-link:hover { color: var(--foreground); }
@@ -243,9 +248,6 @@
 .auth-message { font-size: .85rem; margin: 0; padding: .6rem .75rem; border-radius: .375rem; }
 .auth-message.is-error { background: color-mix(in oklab, var(--destructive) 12%, transparent); color: var(--destructive); }
 .auth-message.is-info { background: color-mix(in oklab, var(--primary) 12%, transparent); color: var(--primary); }
-
-/* ---- nav wrap for extra tabs ---- */
-.nav-links { flex-wrap: wrap; row-gap: .35rem; }
 
 /* ---- suggestions ---- */
 .suggestion-badge {
